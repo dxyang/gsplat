@@ -141,7 +141,11 @@ def split(
     sel = torch.where(mask)[0]
     rest = torch.where(~mask)[0]
 
-    scales = torch.exp(params["scales"][sel])
+    scales = params["scales"][sel]
+    if len(scales.size()) == 1:
+        scales = scales.unsqueeze(1).repeat(1, 3)
+
+    scales = torch.exp(scales)
     quats = F.normalize(params["quats"][sel], dim=-1)
     rotmats = normalized_quat_to_rotmat(quats)  # [N, 3, 3]
     samples = torch.einsum(
@@ -156,7 +160,10 @@ def split(
         if name == "means":
             p_split = (p[sel] + samples).reshape(-1, 3)  # [2N, 3]
         elif name == "scales":
-            p_split = torch.log(scales / 1.6).repeat(2, 1)  # [2N, 3]
+            if len(p.size()) == 1:
+                p_split = torch.log(scales / 1.6).repeat(2, 1)[:, 0]  # [2N,]
+            else:
+                p_split = torch.log(scales / 1.6).repeat(2, 1)  # [2N, 3]
         elif name == "opacities" and revised_opacity:
             new_opacities = 1.0 - torch.sqrt(1.0 - torch.sigmoid(p[sel]))
             p_split = torch.logit(new_opacities).repeat(repeats)  # [2N]
@@ -269,9 +276,14 @@ def relocate(
     probs = opacities[alive_indices].flatten()  # ensure its shape is [N,]
     sampled_idxs = _multinomial_sample(probs, n, replacement=True)
     sampled_idxs = alive_indices[sampled_idxs]
+    old_scales = params["scales"]
+    is_isotropic = False
+    if len(old_scales) == 1:
+        is_isotropic = True
+        old_scales = old_scales.unsqueeze(1).repeat(1, 3)
     new_opacities, new_scales = compute_relocation(
         opacities=opacities[sampled_idxs],
-        scales=torch.exp(params["scales"])[sampled_idxs],
+        scales=torch.exp(old_scales)[sampled_idxs],
         ratios=torch.bincount(sampled_idxs)[sampled_idxs] + 1,
         binoms=binoms,
     )
@@ -281,7 +293,10 @@ def relocate(
         if name == "opacities":
             p[sampled_idxs] = torch.logit(new_opacities)
         elif name == "scales":
-            p[sampled_idxs] = torch.log(new_scales)
+            if is_isotropic:
+                p[sampled_idxs] = torch.log(new_scales[:, 0])
+            else:
+                p[sampled_idxs] = torch.log(new_scales)
         p[dead_indices] = p[sampled_idxs]
         return torch.nn.Parameter(p, requires_grad=p.requires_grad)
 
@@ -311,9 +326,14 @@ def sample_add(
     eps = torch.finfo(torch.float32).eps
     probs = opacities.flatten()
     sampled_idxs = _multinomial_sample(probs, n, replacement=True)
+    old_scales = params["scales"]
+    is_isotropic = False
+    if len(old_scales) == 1:
+        is_isotropic = True
+        old_scales = old_scales.unsqueeze(1).repeat(1, 3)
     new_opacities, new_scales = compute_relocation(
         opacities=opacities[sampled_idxs],
-        scales=torch.exp(params["scales"])[sampled_idxs],
+        scales=torch.exp(old_scales)[sampled_idxs],
         ratios=torch.bincount(sampled_idxs)[sampled_idxs] + 1,
         binoms=binoms,
     )
@@ -323,7 +343,10 @@ def sample_add(
         if name == "opacities":
             p[sampled_idxs] = torch.logit(new_opacities)
         elif name == "scales":
-            p[sampled_idxs] = torch.log(new_scales)
+            if is_isotropic:
+                p[sampled_idxs] = torch.log(new_scales[:, 0])
+            else:
+                p[sampled_idxs] = torch.log(new_scales)
         p_new = torch.cat([p, p[sampled_idxs]])
         return torch.nn.Parameter(p_new, requires_grad=p.requires_grad)
 
@@ -349,6 +372,8 @@ def inject_noise_to_position(
 ):
     opacities = torch.sigmoid(params["opacities"].flatten())
     scales = torch.exp(params["scales"])
+    if len(scales.size()) == 1:
+        scales = scales.unsqueeze(1).repeat(1, 3)
     covars, _ = quat_scale_to_covar_preci(
         params["quats"],
         scales,

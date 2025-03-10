@@ -119,7 +119,7 @@ class DefaultStrategy(Strategy):
         Check if:
             * `params` and `optimizers` have the same keys.
             * Each optimizer has exactly one param_group, corresponding to each parameter.
-            * The following keys are present: {"means", "scales", "quats", "opacities"}.
+            * The following keys are present: {"means", "scales", "opacities"}.
 
         Raises:
             AssertionError: If any of the above conditions is not met.
@@ -132,7 +132,7 @@ class DefaultStrategy(Strategy):
 
         super().check_sanity(params, optimizers)
         # The following keys are required for this strategy.
-        for key in ["means", "scales", "quats", "opacities"]:
+        for key in ["means", "scales", "opacities"]:
             assert key in params, f"{key} is required in params but missing."
 
     def step_pre_backward(
