@@ -92,6 +92,15 @@ class DefaultStrategy(Strategy):
     revised_opacity: bool = False
     verbose: bool = False
     key_for_gradient: Literal["means2d", "gradient_2dgs"] = "means2d"
+    do_opacity_reset: bool = True
+
+    def enable_opacity_reset(self, do_opacity_reset: bool = True):
+        """Enable or disable opacity reset.
+
+        Args:
+            do_opacity_reset (bool): Whether to enable opacity reset. Default is True.
+        """
+        self.do_opacity_reset = do_opacity_reset
 
     def initialize_state(self, scene_scale: float = 1.0) -> Dict[str, Any]:
         """Initialize and return the running state for this strategy.
@@ -178,10 +187,10 @@ class DefaultStrategy(Strategy):
                 )
 
             # prune GSs
-            n_prune = self._prune_gs(params, optimizers, state, step)
+            n_prune, n_opa_prune, n_big_prune = self._prune_gs(params, optimizers, state, step)
             if self.verbose:
                 print(
-                    f"Step {step}: {n_prune} GSs pruned. "
+                    f"Step {step}: {n_prune} GSs pruned ({n_opa_prune} opacity, {n_big_prune} too big). "
                     f"Now having {len(params['means'])} GSs."
                 )
 
@@ -192,13 +201,15 @@ class DefaultStrategy(Strategy):
                 state["radii"].zero_()
             torch.cuda.empty_cache()
 
-        if step % self.reset_every == 0:
-            reset_opa(
-                params=params,
-                optimizers=optimizers,
-                state=state,
-                value=self.prune_opa * 2.0,
-            )
+        if self.do_opacity_reset:
+            assert False
+            if step % self.reset_every == 0:
+                reset_opa(
+                    params=params,
+                    optimizers=optimizers,
+                    state=state,
+                    value=self.prune_opa * 2.0,
+                )
 
     def _update_state(
         self,
@@ -273,10 +284,18 @@ class DefaultStrategy(Strategy):
         device = grads.device
 
         is_grad_high = grads > self.grow_grad2d
-        is_small = (
-            torch.exp(params["scales"]).max(dim=-1).values
-            <= self.grow_scale3d * state["scene_scale"]
-        )
+
+        is_isotropic = len(params["scales"].size()) == 1
+        if is_isotropic:
+            is_small = (
+                torch.exp(params["scales"])
+                <= self.grow_scale3d * state["scene_scale"]
+            )
+        else:
+            is_small = (
+                torch.exp(params["scales"]).max(dim=-1).values
+                <= self.grow_scale3d * state["scene_scale"]
+            )
         is_dupli = is_grad_high & is_small
         n_dupli = is_dupli.sum().item()
 
@@ -318,11 +337,19 @@ class DefaultStrategy(Strategy):
         step: int,
     ) -> int:
         is_prune = torch.sigmoid(params["opacities"].flatten()) < self.prune_opa
+        num_opa_prune = is_prune.sum().item()
+        is_isotropic = len(params["scales"].size()) == 1
         if step > self.reset_every:
-            is_too_big = (
-                torch.exp(params["scales"]).max(dim=-1).values
-                > self.prune_scale3d * state["scene_scale"]
-            )
+            if is_isotropic:
+                is_too_big = (
+                    torch.exp(params["scales"])
+                    > self.prune_scale3d * state["scene_scale"]
+                )
+            else:
+                is_too_big = (
+                    torch.exp(params["scales"]).max(dim=-1).values
+                    > self.prune_scale3d * state["scene_scale"]
+                )
             # The official code also implements sreen-size pruning but
             # it's actually not being used due to a bug:
             # https://github.com/graphdeco-inria/gaussian-splatting/issues/123
@@ -331,10 +358,11 @@ class DefaultStrategy(Strategy):
             if step < self.refine_scale2d_stop_iter:
                 is_too_big |= state["radii"] > self.prune_scale2d
 
+            num_too_big_prune = is_too_big.sum().item()
             is_prune = is_prune | is_too_big
 
         n_prune = is_prune.sum().item()
         if n_prune > 0:
             remove(params=params, optimizers=optimizers, state=state, mask=is_prune)
 
-        return n_prune
+        return n_prune, num_opa_prune, num_too_big_prune

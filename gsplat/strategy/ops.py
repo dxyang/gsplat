@@ -277,9 +277,8 @@ def relocate(
     sampled_idxs = _multinomial_sample(probs, n, replacement=True)
     sampled_idxs = alive_indices[sampled_idxs]
     old_scales = params["scales"]
-    is_isotropic = False
-    if len(old_scales) == 1:
-        is_isotropic = True
+    is_isotropic = len(old_scales.size()) == 1
+    if is_isotropic:
         old_scales = old_scales.unsqueeze(1).repeat(1, 3)
     new_opacities, new_scales = compute_relocation(
         opacities=opacities[sampled_idxs],
@@ -327,9 +326,8 @@ def sample_add(
     probs = opacities.flatten()
     sampled_idxs = _multinomial_sample(probs, n, replacement=True)
     old_scales = params["scales"]
-    is_isotropic = False
-    if len(old_scales) == 1:
-        is_isotropic = True
+    is_isotropic = len(old_scales) == 1
+    if is_isotropic:
         old_scales = old_scales.unsqueeze(1).repeat(1, 3)
     new_opacities, new_scales = compute_relocation(
         opacities=opacities[sampled_idxs],
