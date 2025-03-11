@@ -182,7 +182,7 @@ class DefaultStrategy(Strategy):
             n_dupli, n_split = self._grow_gs(params, optimizers, state, step)
             if self.verbose:
                 print(
-                    f"Step {step}: {n_dupli} GSs duplicated, {n_split} GSs split. "
+                    f"Step {step}: {n_dupli} GSs duplicated (grad high, too small), {n_split} GSs split (grad high, too large). "
                     f"Now having {len(params['means'])} GSs."
                 )
 
