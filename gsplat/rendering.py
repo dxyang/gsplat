@@ -228,8 +228,8 @@ def rasterization(
     device = means.device
     assert means.shape == (N, 3), means.shape
     if covars is None:
-        assert quats.shape == (N, 4), quats.shape
-        assert scales.shape == (N, 3), scales.shape
+        assert quats.shape == (N, 4), f"got {quats.shape} but expected {N}, 4"
+        assert scales.shape == (N, 3), f"got {scales.shape} but expected {N}, 3"
     else:
         assert covars.shape == (N, 3, 3), covars.shape
         quats, scales = None, None
