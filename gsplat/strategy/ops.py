@@ -223,6 +223,7 @@ def reset_opa(
     optimizers: Dict[str, torch.optim.Optimizer],
     state: Dict[str, Tensor],
     value: float,
+    only_visited_gaussians: bool = False
 ):
     """Inplace reset the opacities to the given post-sigmoid value.
 
@@ -232,9 +233,16 @@ def reset_opa(
         value: The value to reset the opacities
     """
 
+    # extract from state which gaussians have accumulated gradients
+    visited_gaussians = state["count"] > 0
+
     def param_fn(name: str, p: Tensor) -> Tensor:
         if name == "opacities":
-            opacities = torch.clamp(p, max=torch.logit(torch.tensor(value)).item())
+            if only_visited_gaussians:
+                print(f"Opacity reset for {torch.sum(visited_gaussians).item()} gaussians")
+                opacities = torch.where(visited_gaussians, torch.logit(torch.tensor(value)).item(), p)
+            else:
+                opacities = torch.clamp(p, max=torch.logit(torch.tensor(value)).item())
             return torch.nn.Parameter(opacities, requires_grad=p.requires_grad)
         else:
             raise ValueError(f"Unexpected parameter name: {name}")

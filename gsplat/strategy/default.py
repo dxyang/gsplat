@@ -202,13 +202,13 @@ class DefaultStrategy(Strategy):
             torch.cuda.empty_cache()
 
         if self.do_opacity_reset:
-            assert False
             if step % self.reset_every == 0:
                 reset_opa(
                     params=params,
                     optimizers=optimizers,
                     state=state,
                     value=self.prune_opa * 2.0,
+                    only_visited_gaussians=False
                 )
 
     def _update_state(
@@ -339,6 +339,7 @@ class DefaultStrategy(Strategy):
         is_prune = torch.sigmoid(params["opacities"].flatten()) < self.prune_opa
         num_opa_prune = is_prune.sum().item()
         is_isotropic = len(params["scales"].size()) == 1
+        num_too_big_prune = 0
         if step > self.reset_every:
             if is_isotropic:
                 is_too_big = (
