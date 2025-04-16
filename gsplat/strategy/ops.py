@@ -233,12 +233,13 @@ def reset_opa(
         value: The value to reset the opacities
     """
 
-    # extract from state which gaussians have accumulated gradients
-    visited_gaussians = state["count"] > 0
 
     def param_fn(name: str, p: Tensor) -> Tensor:
         if name == "opacities":
             if only_visited_gaussians:
+                # extract from state which gaussians have accumulated gradients
+                visited_gaussians = state["count"] > 0
+
                 print(f"Opacity reset for {torch.sum(visited_gaussians).item()} gaussians")
                 opacities = torch.where(visited_gaussians, torch.logit(torch.tensor(value)).item(), p)
             else:
