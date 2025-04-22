@@ -223,7 +223,8 @@ def reset_opa(
     optimizers: Dict[str, torch.optim.Optimizer],
     state: Dict[str, Tensor],
     value: float,
-    only_visited_gaussians: bool = False
+    only_visited_gaussians: bool = False,
+    mask: Tensor = None
 ):
     """Inplace reset the opacities to the given post-sigmoid value.
 
@@ -236,10 +237,11 @@ def reset_opa(
 
     def param_fn(name: str, p: Tensor) -> Tensor:
         if name == "opacities":
-            if only_visited_gaussians:
+            if mask is not None:
+                opacities = torch.where(mask, torch.logit(torch.tensor(value)).item(), p)
+            elif only_visited_gaussians:
                 # extract from state which gaussians have accumulated gradients
-                visited_gaussians = state["count"] > 0
-
+                visited_gaussians = state["count_since_last_opa_reset"] > 0
                 print(f"Opacity reset for {torch.sum(visited_gaussians).item()} gaussians")
                 opacities = torch.where(visited_gaussians, torch.logit(torch.tensor(value)).item(), p)
             else:

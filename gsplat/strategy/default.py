@@ -113,7 +113,7 @@ class DefaultStrategy(Strategy):
         # - grad2d: running accum of the norm of the image plane gradients for each GS.
         # - count: running accum of how many time each GS is visible.
         # - radii: the radii of the GSs (normalized by the image resolution).
-        state = {"grad2d": None, "count": None, "scene_scale": scene_scale}
+        state = {"grad2d": None, "count": None, "scene_scale": scene_scale, "count_since_last_opa_reset": None}
         if self.refine_scale2d_stop_iter > 0:
             state["radii"] = None
         return state
@@ -210,20 +210,27 @@ class DefaultStrategy(Strategy):
                     value=self.prune_opa * 2.0,
                     only_visited_gaussians=False
                 )
+                # reset running stats
+                state["count_since_last_opa_reset"].zero_()
 
     def reset_opacity(
         self,
         params: Union[Dict[str, torch.nn.Parameter], torch.nn.ParameterDict],
         optimizers: Dict[str, torch.optim.Optimizer],
         state: Dict[str, Any],
+        only_visited_gaussians: bool = False,
+        mask: torch.Tensor = None,
     ):
         reset_opa(
             params=params,
             optimizers=optimizers,
             state=state,
             value=self.prune_opa * 2.0,
-            only_visited_gaussians=False
+            only_visited_gaussians=only_visited_gaussians,
+            mask=mask
         )
+        # reset running stats
+        state["count_since_last_opa_reset"].zero_()
 
 
     def _update_state(
@@ -258,6 +265,8 @@ class DefaultStrategy(Strategy):
             state["grad2d"] = torch.zeros(n_gaussian, device=grads.device)
         if state["count"] is None:
             state["count"] = torch.zeros(n_gaussian, device=grads.device)
+        if state["count_since_last_opa_reset"] is None:
+            state["count_since_last_opa_reset"] = torch.zeros(n_gaussian, device=grads.device)
         if self.refine_scale2d_stop_iter > 0 and state["radii"] is None:
             assert "radii" in info, "radii is required but missing."
             state["radii"] = torch.zeros(n_gaussian, device=grads.device)
@@ -276,6 +285,9 @@ class DefaultStrategy(Strategy):
 
         state["grad2d"].index_add_(0, gs_ids, grads.norm(dim=-1))
         state["count"].index_add_(
+            0, gs_ids, torch.ones_like(gs_ids, dtype=torch.float32)
+        )
+        state["count_since_last_opa_reset"].index_add_(
             0, gs_ids, torch.ones_like(gs_ids, dtype=torch.float32)
         )
         if self.refine_scale2d_stop_iter > 0:
