@@ -242,7 +242,7 @@ def reset_opa(
             elif only_visited_gaussians:
                 # extract from state which gaussians have accumulated gradients
                 visited_gaussians = state["count_since_last_opa_reset"] > 0
-                print(f"Opacity reset for {torch.sum(visited_gaussians).item()} gaussians")
+                # print(f"Opacity reset for {torch.sum(visited_gaussians).item()} gaussians")
                 opacities = torch.where(visited_gaussians, torch.logit(torch.tensor(value)).item(), p)
             else:
                 opacities = torch.clamp(p, max=torch.logit(torch.tensor(value)).item())
